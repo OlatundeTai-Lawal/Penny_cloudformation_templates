@@ -6,7 +6,8 @@ phases:
       python: 3.8
     commands:
       - pip install yq
-      - apt-get update && apt-get install -y jq
+      - sudo yum update -y && sudo yum install -y jq
+
 
   build:
     commands:
