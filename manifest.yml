@@ -1,7 +1,6 @@
 stacks:
   - stackName: "pennymac-stack-1.yml"
-    templateFile: "./Penny_cloudformation_templates/pennymac-stack-1.yml
-"
+    templateFile: "./Penny_cloudformation_templates/pennymac-stack-1.yml"
     parameters:
       Name: "stack-1"
 
