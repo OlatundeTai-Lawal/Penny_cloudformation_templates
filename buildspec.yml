@@ -1,0 +1,15 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.8
+    commands:
+      - pip install yq
+      - apt-get update && apt-get install -y jq
+
+  build:
+    commands:
+      - echo "Deploying CloudFormation Stacks..."
+      - chmod +x deploy_stacks.sh
+      - ./deploy_stacks.sh
