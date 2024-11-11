@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "CloudFormation template for RDS MySQL referencing Secrets Manager"
+
+Parameters:
+  VPCId:
+    Type: "AWS::EC2::VPC::Id"
+    Description: "VPC ID where RDS instance will be deployed"
+
+  SubnetIds:
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Description: "Subnets for RDS instance"
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: 
+      - dev
+      - staging
+      - prod
+    Description: "Environment type" 
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.medium
+    AllowedValues:
+      - db.t3.medium
+      - db.t3.large
+      - db.r5.large
+    Description: "Database instance size" 
+
+  StorageType:
+    Type: String
+    Default: gp3
+    AllowedValues:
+      - gp2
+      - gp3
+      - io1
+    Description: "Storage type for RDS instance"      
+
+Resources:
+  RDSInstance:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      DBInstanceClass: "db.t3.medium"
+      Engine: "mysql"
+      MasterUsername: "{{resolve:secretsmanager:RDSMasterPassword:SecretString:username}}"
+      MasterUserPassword: "{{resolve:secretsmanager:RDSMasterPassword:SecretString:password}}"
+      AllocatedStorage: 20
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      MultiAZ: true
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeleteAutomatedBackups: false
+      CopyTagsToSnapshot: true
+      # MonitoringInterval: 60  # Enable enhanced monitoring
+      # MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 7
+      DeletionProtection: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Name
+          Value: !Sub "${Environment}-mysql-instance"
+
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: "Subnet group for RDS"
+      SubnetIds: !Ref SubnetIds
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Name
+          Value: !Sub "${Environment}-subnet-group"
+
+  DBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Allow MySQL traffic from EC2 instances"
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !ImportValue "SecurityGroupIds"   # Allow EC2 to access RDS on MySQL port
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Name
+          Value: !Sub "${Environment}-security-group"
+
+  # RDSMonitoringRole:
+  #   Type: "AWS::IAM::Role"
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: "2012-10-17"
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service: monitoring.rds.amazonaws.com
+  #           Action: sts:AssumeRole
+  #     ManagedPolicyArns:
+  #       - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+
+  # DBParameterGroup:
+  #   Type: "AWS::RDS::DBParameterGroup"
+  #   Properties:
+  #     Family: mysql8.0
+  #     Description: "Custom parameter group for MySQL 8.0"
+  #     Parameters:
+  #       max_connections: "1000"
+  #       slow_query_log: "1"
+  #       long_query_time: "2"
+  #       performance_schema: "1"
+  #     Tags:
+  #       - Key: Environment
+  #         Value: !Ref Environment     
+# Outputs:
+#   RDSInstanceEndpoint:
+#     Value: !GetAtt RDSInstance.Endpoint.Address
+#     Export:
+#       Name: "RDSInstanceEndpoint"
+
+Outputs:
+  RDSInstanceEndpoint:
+    Description: "RDS Instance Endpoint"
+    Value: !GetAtt RDSInstance.Endpoint.Address
+    Export:
+      Name: !Sub "${Environment}-RDSInstanceEndpoint"
+
+  RDSInstancePort:
+    Description: "RDS Instance Port"
+    Value: !GetAtt RDSInstance.Endpoint.Port
+    Export:
+      Name: !Sub "${Environment}-RDSInstancePort"
+
+  DBSecurityGroupId:
+    Description: "Security Group ID for RDS"
+    Value: !Ref DBSecurityGroup
+    Export:
+      Name: !Sub "${Environment}-DBSecurityGroupId"

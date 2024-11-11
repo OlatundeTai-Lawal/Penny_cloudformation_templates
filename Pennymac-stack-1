@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: " Stack 1 - IAM Role, Secrets Manager, and Password Generation"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - production
+
+Resources:
+  MyIAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "CrossAccountSecretsAccessRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ec2.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "EC2SecretsAndRDSAndSSMAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "secretsmanager:GetSecretValue"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "rds:DescribeDBInstances"
+                  - "rds:Connect"
+                Resource: "*"  
+              - Effect: "Allow"
+                Action:
+                  - "ssm:SendCommand"
+                  - "ssm:DescribeInstanceInformation"
+                  - "ssm:GetCommandInvocation"
+                  - "ssm:ListCommands"
+                  - "ssm:ListCommandInvocations"
+                  - "ssm:CreateDocument"
+                  - "ssm:UpdateDocument"
+                  - "ssm:DescribeAssociation"
+                  - "ssm:GetDeployablePatchSnapshotForInstance"
+                  - "ssm:GetDocument"
+                  - "ssm:DescribeDocument"
+                  - "ssm:ListAssociations"
+                  - "ssm:ListInstanceAssociations"
+                  - "ssm:PutInventory"
+                  - "ssm:PutComplianceItems"
+                  - "ssm:UpdateInstanceInformation"
+                  - "ssm:ListDocuments"
+                  - "ssm:SendCommand"
+                  - "ssm:DescribeInstanceInformation"
+                  - "ssm:GetParameters"
+                  - "ssmmessages:CreateControlChannel"
+                  - "ssmmessages:CreateDataChannel"
+                  - "ssmmessages:OpenControlChannel"
+                  - "ssmmessages:OpenDataChannel"
+                Resource: "*"
+
+              - Effect: "Allow"
+                Action:
+                  - "ec2messages:AcknowledgeMessage"
+                  - "ec2messages:DeleteMessage"
+                  - "ec2messages:FailMessage"
+                  - "ec2messages:GetEndpoint"
+                  - "ec2messages:GetMessages"
+                  - "ec2messages:SendReply"
+                Resource: "*"
+
+  MyInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: '/'
+      Roles:
+      - !Ref  MyIAMRole
+
+  MasterPasswordSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Name: !Sub "${Environment}-RDSMasterPassword"
+      Description: "Secret for storing the RDS master password"
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\\'
+
+Outputs:
+  IAMRoleARN:
+    Value: !GetAtt MyIAMRole.Arn
+    Export:
+      Name: "IAMRoleARN"
+
+  MYInstanceProfileARN:
+    Value: !GetAtt MyInstanceProfile.Arn
+    Export:
+      Name: "MYInstanceProfileARN"    
+
+  SecretARN:
+    Value: !Ref MasterPasswordSecret
+    Export:
+      Name: "RDSMasterPasswordSecretARN"
