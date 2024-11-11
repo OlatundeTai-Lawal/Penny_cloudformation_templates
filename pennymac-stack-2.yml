@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Stack-3 CloudFormation template for Windows EC2 with ASG , ALB using and SSM Documents"
+
+Parameters:
+  VPCId:
+    Type: "AWS::EC2::VPC::Id"
+    Description: "VPC ID for EC2 and ALB"
+
+  # subnetsIds:
+  #   Type: "List<AWS::EC2::Subnet::Id>"
+  #   Description: "The subnets to launch the instances.
+
+  PrivateSubnets:
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Description: "Subnets for Auto Scaling Group. Only private subnets are recommended."
+    ConstraintDescription: "Only private subnets are allowed. must be a list of at least two existing subnets associated with at least
+      two different availability zones"
+  
+  PublicSubnets:
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Description: "Public subnets for ALB"
+
+  Environment:
+    Type: "String"
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+      - "qa"
+      - "prod"
+    Description: "The app environment."
+
+  InstanceType:
+    Type: String
+    Default: "t3.micro"
+    AllowedValues:
+      - "t2.micro"
+      - "t2.small"
+      - "t2.medium"
+      - "t2.large"
+      - "t3.micro"
+      - "t3.small"
+      - "t3.medium"
+      - "t3.large"
+      - "t3.xlarge"
+      - "t3.2xlarge"
+    Description: "The ec2 instance type."
+
+  AMI:
+    Type: "AWS::EC2::Image::Id"
+    Description: "The AMI ID for the Windows Server to use in the Launch Template"
+    ConstraintDescription: "Must be a valid AMI for the specified region and account."
+  # Mappings:
+  #   AMIIDMap: 
+  #     us-east-1:
+  #       AMI: "ami-0f7f2e8f6719a4f3b"
+  #     us-east-2:
+  #       AMI: "ami-0a45de5a"
+  #     us-west-1:
+  #       AMI: "ami-0a9e7c88e2c18ae9c"
+  #     us-west-2:
+  #       AMI: "ami-0aad6d02c38ae74e4"
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: "The ec2 key pair name to use to access the instances."      
+
+Resources:
+  ALBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Allow HTTP traffic for ALB"
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${Environment}-alb-sg"
+        - Key: Environment
+          Value: !Ref Environment    
+
+  EC2SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Allow HTTP traffic for EC2 instances"
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: "tcp"
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: "0.0.0.0/0"  # Consider restricting to specific IP ranges
+
+  LoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: "WindowsWebAppALB"
+      Scheme: "internet-facing"
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets: !Ref PublicSubnets
+
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      Name: !Sub "${Environment}-TargetGroup"
+      HealthCheckPath: "/index.html"
+      HealthCheckProtocol: "HTTP"
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VPCId
+      Port: 80
+      Protocol: "HTTP"
+      TargetType: "instance"
+      HealthCheckEnabled: true
+      # TargetGroupAttributes:
+      #   - Key: deregistration_delay.timeout_seconds
+      #     Value: "60"
+
+
+  Listener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref TargetGroup
+
+  LaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: "WindowsWebAppLaunchTemplate"
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        ImageId: !Ref AMI
+        KeyName: !Ref KeyName
+        IamInstanceProfile:
+          Arn: !ImportValue MYInstanceProfileARN
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        # UserData:
+        #   Fn::Base64: !Sub |
+        #     <powershell>
+        #     # Run the SSM command to install IIS and configure static page
+        #     aws ssm send-command --document-name "IISInstallAndConfigure" --targets "Key=instanceIds,Values=$env:EC2_INSTANCE_ID" --timeout-seconds 600
+        #     </powershell>
+
+        TagSpecifications:
+          - ResourceType: "instance"
+            # Tags:
+            #   - Key: "Name"
+            #     Value: "WindowsServer"  # Tagging EC2 instances with "Name
+            Tags:
+              - Key: "Name"
+                Value: !Sub "${Environment}-WindowsServer"
+              - Key: "Environment"
+                Value: !Ref Environment
+  IISInstallSSMDocument:
+    Type: "AWS::SSM::Document"
+    Properties:
+      DocumentType: "Command"
+      Name: "IISInstallAndConfigure"
+      Content:
+        schemaVersion: "2.2"
+        description: "Install IIS and host a static HTML page"
+        mainSteps:
+          - action: "aws:runPowerShellScript"
+            name: "runShellScript"
+            inputs:
+              runCommand:
+                - |
+                  # Install IIS
+                  Install-WindowsFeature -name Web-Server -IncludeManagementTools
+                  
+                  # Create a simple static HTML page
+                  $htmlContent = @"
+                  <html>
+                      <body>
+                          <h1>Welcome to the IIS Server!</h1>
+                          <p>This is a static page hosted on IIS.</p>
+                      </body>
+                  </html>
+                  "@
+                  $htmlPath = "C:\inetpub\wwwroot\index.html"
+                  Set-Content -Path $htmlPath -Value $htmlContent
+
+                  # Ensure IIS service is started
+                  Start-Service -Name W3SVC
+
+                  # Open port 80 in the firewall for HTTP traffic
+                  New-NetFirewallRule -DisplayName "Allow HTTP" -Direction Inbound -Protocol TCP -Action Allow -LocalPort 80
+          
+
+   # Association to apply the IISInstallAndConfigure document to the EC2 instances
+  IISInstallAndConfigureAssociation:
+    Type: "AWS::SSM::Association"
+    Properties:
+      Name: !Ref IISInstallSSMDocument
+      DocumentVersion: "1"
+      Targets:
+        - Key: "tag:Name"
+          Values:
+            - !Sub "${Environment}-WindowsServer"               #"WindowsServer" # Replace with the tag you assign to your EC2 instances
+     
+      # Parameters:
+      #   TimeoutSeconds:
+      #     - "600"
+      AssociationName: "IISInstallOnWindowsInstances"
+      MaxErrors: "0"
+      MaxConcurrency: "50%"     
+
+  AutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      VPCZoneIdentifier: !Ref PublicSubnets
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: "2"
+      MaxSize: "10"
+      DesiredCapacity: "2"
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Environment}-WindowsASG"
+          PropagateAtLaunch: true
+
+Outputs:
+  ALBEndpoint:
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: "ALBEndpoint"
+
+  SecurityGroupIds:
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: "SecurityGroupIds"    
