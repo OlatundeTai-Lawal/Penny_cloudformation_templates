@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: "CloudFormation template for Windows EC2 with Auto Scaling and ALB using Launch Template and configurable AMI parameter"
+Description: "Stack-3 CloudFormation template for Windows EC2 with ASG , ALB using and SSM Documents"
 
 Parameters:
   VPCId:

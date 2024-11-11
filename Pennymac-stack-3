@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: "CloudFormation template for RDS MySQL referencing Secrets Manager"
+Description: "Stack-2 CloudFormation template for RDS MySQL referencing Secrets Manager"
 
 Parameters:
   VPCId:
