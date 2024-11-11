@@ -1,0 +1,17 @@
+stacks:
+  - stackName: "pennymac-stack-1.yml"
+    templateFile: "./Pennymac_project/pennymac-stack-1.yml"
+    parameters:
+      Name: "stack-1"
+
+      
+  - stackName: "Stack2"
+    templateFile: "./Pennymac_project/pennymac-stack-2.yml"
+    parameters:
+      Name: "stack-2"
+      
+  - stackName: "Stack3"
+    templateFile: "./Pennymac_project/pennymac-stack-3.yml"
+    parameters:
+      Name: "stack-3"
+      
